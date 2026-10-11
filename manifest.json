@@ -1,0 +1,48 @@
+{
+  "manifest_version": 2,
+  "name": "時報 Lite",
+  "version": "0.4.0",
+  "description": "ニコニコ動画の視聴ページで、0時・2時の時報とニュース／お知らせ（マーキーエリア風）をクライアント上で簡易再現します。時報のON/OFFはアカウントページで切り替えられます。",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "jihou-lite@local.example",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": [
+    "storage",
+    "https://news.nicovideo.jp/*",
+    "https://blog.nicovideo.jp/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.nicovideo.jp/*"
+      ],
+      "js": [
+        "schedule.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://account.nicovideo.jp/my/account*"
+      ],
+      "js": [
+        "schedule.js",
+        "account.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    "media/*"
+  ]
+}
