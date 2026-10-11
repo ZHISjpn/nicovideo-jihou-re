@@ -12,7 +12,7 @@
     JIHOU_H: 56,
     VOLUME: 0.5,             // 時報の音量 0.0〜1.0
     DIM: 0.55,               // 時報中に動画を暗くする濃さ 0〜1
-    ONLY_WHEN_PLAYING: true, // true: 動画が再生中のときだけ時報を出す
+    ONLY_WHEN_PLAYING: false, // false: 再生中・一時停止中・停止中のどれでも時報を出す（一時停止・停止中なら、時報のあとも維持）／true: 再生中のときだけ
     // --- ニュース／お知らせ ---
     NEWS_ENABLED: true,
     NEWS_ROTATE_SEC: 10,     // 表示を止めておく秒数（その後、次へスクロール）
