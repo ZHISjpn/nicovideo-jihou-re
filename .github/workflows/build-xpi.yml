@@ -1,0 +1,38 @@
+name: Build XPI Extension
+
+on:
+  push:
+    branches:
+      - main  # または master やリリース用ブランチ
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. リポジトリのコードをチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Node.jsのセットアップ（web-extの実行に必要）
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 3. web-ext を使って拡張機能をビルド（.xpi または .zip を作成）
+      - name: Run web-ext build
+        uses: wampsoft/web-ext-action@v1 # または他の web-ext 関連のアクション
+        with:
+          cmd: build
+          source: '.' # 拡張機能のファイルがあるディレクトリ（必要に応じて変更）
+          artifacts: 'web-ext-artifacts'
+
+      # 4. ビルドしたファイルをGitHub Actionsの成果物（Artifacts）として保存
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-xpi
+          path: web-ext-artifacts/
