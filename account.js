@@ -17,7 +17,11 @@
       label: r.label || `${r.hour}:${pad(r.minute)} の時報`,
     })),
     { key: "events", label: "イベント時報" },
+    // 試験的。既定はOFF（ONにしたときだけ、ZenzaWatchのプレーヤー上でも時報を表示する）
+    { key: "zenza", label: "ZenzaWatch上でも時報を表示（試験的）" },
   ];
+  const DEFAULT_OFF = new Set(["zenza"]);
+  const valueOf = (map, key) => (DEFAULT_OFF.has(key) ? map[key] === true : map[key] !== false);
 
   // サイトの #webpush 用トグルと同じ見た目を、このパネル専用に定義する
   const CSS = `
@@ -107,7 +111,7 @@
 
     const map = await loadMap();
     section.querySelectorAll("input.toggle-button").forEach((input) => {
-      input.checked = map[input.dataset.key] !== false; // 未設定はON
+      input.checked = valueOf(map, input.dataset.key); // 未設定は、通常ON（zenzaのみOFF）
       input.addEventListener("change", async () => {
         const next = await loadMap();                   // 他のタブでの変更を壊さないよう、読み直してから更新
         next[input.dataset.key] = input.checked;
@@ -127,7 +131,7 @@
     if (area !== "local" || !changes[SETTINGS_KEY]) return;
     const map = changes[SETTINGS_KEY].newValue || {};
     document.querySelectorAll(`#${SECTION_ID} input.toggle-button`).forEach((input) => {
-      input.checked = map[input.dataset.key] !== false;
+      input.checked = valueOf(map, input.dataset.key);
     });
   });
 

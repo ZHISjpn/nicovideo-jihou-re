@@ -143,6 +143,36 @@
   }
   const onWatchPage = () => location.pathname.startsWith("/watch/");
 
+  // ---------- ZenzaWatch 対応（試験的。アカウント設定でONにしたときだけ有効） ----------
+  // ZenzaWatch(HLS対応版)の動画は、<zenza-video> というカスタム要素のシャドウDOMの中にあるため、
+  // その中の本物の <video> を取り出して、一時停止・再開・位置の基準に使う。
+  function findZenza() {
+    const dlg = document.getElementById("zenzaVideoPlayerDialog");
+    if (!dlg || !dlg.classList.contains("is-open")) return null;
+    const hostEl = dlg.querySelector("zenza-video") || dlg.querySelector("video");
+    if (!hostEl) return null;
+    let real = null;
+    if (hostEl.localName === "video") {
+      real = hostEl;
+    } else {
+      const root = hostEl.openOrClosedShadowRoot || hostEl.shadowRoot; // Firefox拡張は閉じたシャドウDOMも読める
+      real = root ? root.querySelector("video") : null;
+    }
+    if (!real) return null;
+    const box = real.getBoundingClientRect().width > 0 ? real : hostEl;
+    return { video: real, box, overlay: true };
+  }
+  // 時報の対象（video＝停止・再開する本物の動画 / box＝位置の基準 / overlay＝動画の上端に重ねる）
+  function pickTarget() {
+    if (enabledMap.zenza === true) {
+      const z = findZenza();
+      if (z) return z;
+    }
+    if (!onWatchPage()) return null;
+    const v = pickVideo();
+    return v ? { video: v, box: v, overlay: false } : null;
+  }
+
   // ---------- レイアウト追従 ----------
   // 通常時: マーキーエリアをプレーヤーの「外・直上」に置く。
   //         そのぶんの空きは、プレーヤー全体(fullscreen-target)に margin-top を付けて確保する。
@@ -169,26 +199,27 @@
   function layout() {
     const fsEl = document.fullscreenElement;
     const fs = !!fsEl && fsEl.tagName !== "VIDEO";
+    const t = pickTarget();
+    const overlay = fs || !!(t && t.overlay); // 全画面・ZenzaWatch上は、動画の上端に重ねる（座標はビューポート基準）
     const parent = fs ? fsEl : document.documentElement;
     if (dimEl.parentNode !== parent) { parent.appendChild(dimEl); lastKey = ""; }
     if (host.parentNode !== parent) { parent.appendChild(host); lastKey = ""; } // dim の後ろ＝全画面では dim の上
-    host.style.position = fs ? "fixed" : "absolute";
-    host.style.zIndex = fs ? MAXZ : "1";
-    dimEl.style.position = fs ? "fixed" : "absolute";
+    host.style.position = overlay ? "fixed" : "absolute";
+    host.style.zIndex = overlay ? MAXZ : "1";
+    dimEl.style.position = overlay ? "fixed" : "absolute";
 
-    const v = onWatchPage() ? pickVideo() : null;
-    setReserve(!!v && !fs && (CONFIG.NEWS_ENABLED || state.jihou));
-    if (!v) { hideAll(); return; }
+    setReserve(!!t && !overlay && (CONFIG.NEWS_ENABLED || state.jihou));
+    if (!t) { hideAll(); return; }
 
-    const r = v.getBoundingClientRect();
+    const r = t.box.getBoundingClientRect();
     if (r.width < 320 || r.height < 180) { hideAll(); return; }
 
     let scale, h, top;
-    if (fs) {
+    if (overlay) {
       if (!state.jihou) { hideAll(); return; }
-      scale = Math.min(Math.max(r.width / 728, 1), 3);
+      scale = fs ? Math.min(Math.max(r.width / 728, 1), 3) : Math.min(1, r.width / CONFIG.JIHOU_W);
       h = Math.round(CONFIG.BAR_HEIGHT * scale);
-      top = r.top;                       // 全画面は動画上端に重ねる
+      top = r.top;                       // 全画面・ZenzaWatch上は動画上端に重ねる
     } else {
       if (!state.jihou && !CONFIG.NEWS_ENABLED) { hideAll(); return; }
       scale = Math.min(1, r.width / CONFIG.JIHOU_W);
@@ -196,8 +227,8 @@
       top = r.top - h;                   // プレーヤーの直上
     }
     // 通常時は文書座標(absolute)、全画面時はビューポート座標(fixed)
-    const ox = fs ? 0 : window.scrollX, oy = fs ? 0 : window.scrollY;
-    const key = [r.left + ox, top + oy, r.width, r.height, h, state.jihou, fs].map((n) => Math.round(+n)).join(",");
+    const ox = overlay ? 0 : window.scrollX, oy = overlay ? 0 : window.scrollY;
+    const key = [r.left + ox, top + oy, r.width, r.height, h, state.jihou, overlay].map((n) => Math.round(+n)).join(",");
     state.barVisible = true;
     if (key === lastKey) return;
     lastKey = key;
@@ -209,7 +240,7 @@
     jv.style.height = Math.round(CONFIG.JIHOU_H * scale) + "px";
     if (state.jihou) {
       dimEl.style.cssText =
-        `all:initial;display:block;position:${fs ? "fixed" : "absolute"};left:${r.left + ox}px;top:${r.top + oy}px;` +
+        `all:initial;display:block;position:${overlay ? "fixed" : "absolute"};left:${r.left + ox}px;top:${r.top + oy}px;` +
         `width:${r.width}px;height:${r.height}px;background:#000;opacity:${CONFIG.DIM};pointer-events:none;z-index:${MAXZ};`;
     } else {
       dimEl.style.display = "none";
@@ -220,8 +251,9 @@
   // ---------- 時報 ----------
   async function playJihou(entry, force = false) {
     if (state.jihou) return;
-    const v = onWatchPage() ? pickVideo() : null;
-    if (!v) return;
+    const t = pickTarget();
+    if (!t) return;
+    const v = t.video;
     if (!force && CONFIG.ONLY_WHEN_PLAYING && (v.paused || v.ended)) return;
 
     state.jihou = true;
@@ -310,6 +342,20 @@
   //   document.dispatchEvent(new Event("jihou:0"))    … 0時の時報
   //   document.dispatchEvent(new Event("jihou:2"))   … 2時の時報
   //   document.dispatchEvent(new Event("jihou:event"))    … schedule.js の1番目のイベント
+  //   document.dispatchEvent(new Event("jihou:zenza"))   … ZenzaWatch対応の診断（結果はコンソールに出力）
+  document.addEventListener("jihou:zenza", () => {
+    const dlg = document.getElementById("zenzaVideoPlayerDialog");
+    const z = findZenza();
+    console.log("[時報Lite] ZenzaWatch診断", {
+      設定ON: enabledMap.zenza === true,
+      ダイアログあり: !!dlg,
+      開いている: !!(dlg && dlg.classList.contains("is-open")),
+      動画を検出: !!z,
+      動画の位置: z ? JSON.stringify(z.video.getBoundingClientRect()) : null,
+      基準の位置: z ? JSON.stringify(z.box.getBoundingClientRect()) : null,
+      一時停止中: z ? z.video.paused : null,
+    });
+  });
   document.addEventListener("jihou:0", () => {
     const r = SCHEDULE.find((x) => x.hour === 0) || SCHEDULE[0];
     if (r) playJihou(r, true);
