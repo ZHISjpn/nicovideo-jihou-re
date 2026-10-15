@@ -17,11 +17,12 @@
     NEWS_ENABLED: true,
     NEWS_ROTATE_SEC: 10,     // 表示を止めておく秒数（その後、次へスクロール）
     NEWS_SLIDE_MS: 450,      // 切り替え時のスクロール時間
+    NEWS_ORDER: "random",    // 表示順。"random"＝無作為（ページを開くたびに変わる）／"newest"＝日時の新しい順
     NEWS_REFRESH_MIN: 10,    // フィード再取得の間隔(分)
-    MAX_PER_FEED: 15,        // 各フィードから使う最大件数
+    MAX_PER_FEED: 0,         // 各フィードから使う最大件数（0＝XMLに含まれるすべての項目）
     SKIP_KEEP_DAYS: 30,      // スキップした記事を覚えておく日数
   };
-  // 表示するフィード（background.js の FEED_URLS のキーと対応）。交互に表示される。
+  // 読み込むフィード（background.js の FEED_URLS のキーと対応）。すべての項目を合わせて、日時の新しい順に表示される。
   const FEEDS = [
     { key: "news", label: "ニュース" },
     { key: "notice", label: "お知らせ" },
@@ -222,7 +223,6 @@
     const v = onWatchPage() ? pickVideo() : null;
     if (!v) return;
     if (!force && CONFIG.ONLY_WHEN_PLAYING && (v.paused || v.ended)) return;
-    if (document.visibilityState === "hidden" && !force) return;
 
     state.jihou = true;
     const wasPlaying = !v.paused && !v.ended;
@@ -275,7 +275,7 @@
     pinMessage({ key: "event:" + e.id, title: e.message, link: e.messageUrl || e.url, label: null, once: true });
   }
 
-  setInterval(() => {
+  function checkSchedule() {
     if (!settingsLoaded) return;
     const now = new Date();
     const nowMs = now.getTime();
@@ -301,7 +301,10 @@
         playJihou(r);
       }
     }
-  }, 500);
+  }
+  setInterval(checkSchedule, 500);
+  // 裏のタブでは、タイマーが間引かれて遅れることがある。前面に戻ったときにも確認する
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) checkSchedule(); });
 
   // ---------- テスト用（DevToolsのコンソールで実行。ON/OFF設定には影響されません） ----------
   //   document.dispatchEvent(new Event("jihou:0"))    … 0時の時報
@@ -331,21 +334,38 @@
     skipped: {},      // key(link またはイベントkey) -> 記録時刻(ms)
     busyUntil: 0,
     pinned: [],       // イベントのメッセージ（一度きり。先頭に差し込む）
+    rank: new Map(),  // 無作為順のための、項目ごとの乱数（key -> 0〜1）
   };
   const keyOf = (i) => i.key || i.link;
   let nextAt = Date.now() + CONFIG.NEWS_ROTATE_SEC * 1000;
+
+  // 子要素のうち、名前（localName）が names のどれかに一致する最初の非空テキスト
+  function childText(el, names) {
+    for (const c of el.children) {
+      if (names.includes(c.localName)) {
+        const t = (c.textContent || "").trim();
+        if (t) return t;
+      }
+    }
+    return "";
+  }
 
   function parseFeed(text, label) {
     const doc = new DOMParser().parseFromString(text, "text/xml");
     if (doc.querySelector("parsererror")) throw new Error("feed parse error");
     const out = [];
     doc.querySelectorAll("item, entry").forEach((el) => {
-      const title = (el.querySelector("title")?.textContent || "").replace(/\s+/g, " ").trim();
-      const linkEl = el.querySelector("link");
+      const title = childText(el, ["title"]).replace(/\s+/g, " ");
+      // Atom は link が複数ある場合があるので、rel が無いか alternate のものを優先
+      const links = Array.from(el.children).filter((c) => c.localName === "link");
+      const linkEl = links.find((l) => !l.getAttribute("rel") || l.getAttribute("rel") === "alternate") || links[0];
       const link = (linkEl?.getAttribute("href") || linkEl?.textContent || "").trim();
-      if (title && /^https?:\/\//.test(link)) out.push({ title, link, label });
+      // 日時: RSS の pubDate / dc:date、Atom の published / updated
+      let at = Date.parse(childText(el, ["pubDate", "published", "updated", "date"]));
+      if (Number.isNaN(at)) at = null;
+      if (title && /^https?:\/\//.test(link)) out.push({ title, link, label, at });
     });
-    return out.slice(0, CONFIG.MAX_PER_FEED);
+    return CONFIG.MAX_PER_FEED > 0 ? out.slice(0, CONFIG.MAX_PER_FEED) : out;
   }
 
   function renderItem(item, dir) {
@@ -376,10 +396,38 @@
   }
 
   function rebuildItems() {
-    const lists = FEEDS.map((f) => (news.feeds[f.key] || []).filter((i) => !(keyOf(i) in news.skipped)));
-    const merged = [];
-    const n = Math.max(0, ...lists.map((l) => l.length));
-    for (let i = 0; i < n; i++) for (const l of lists) if (i < l.length) merged.push(l[i]);
+    // すべてのフィードの項目を集め、同じURLは1件にまとめ、スキップ済みを除く
+    const seen = new Set();
+    const all = [];
+    for (const f of FEEDS) {
+      for (const i of news.feeds[f.key] || []) {
+        const k = keyOf(i);
+        if (k in news.skipped || seen.has(k)) continue;
+        seen.add(k);
+        all.push(i);
+      }
+    }
+    let merged;
+    if (CONFIG.NEWS_ORDER === "newest") {
+      // 日時の新しい順。日時のない項目は最後に回し、同じ日時のものは元の並びを保つ
+      merged = all
+        .map((item, n) => ({ item, n }))
+        .sort((x, y) => {
+          const tx = x.item.at ?? -Infinity, ty = y.item.at ?? -Infinity;
+          return tx === ty ? x.n - y.n : ty - tx;
+        })
+        .map((x) => x.item);
+    } else {
+      // 無作為。フィードを再取得しても並びが入れ替わらないよう、項目ごとの乱数を最初に決めて覚えておく
+      merged = all
+        .map((item) => {
+          const k = keyOf(item);
+          if (!news.rank.has(k)) news.rank.set(k, Math.random());
+          return { item, r: news.rank.get(k) };
+        })
+        .sort((x, y) => x.r - y.r)
+        .map((x) => x.item);
+    }
     news.items = news.pinned.concat(merged);
 
     const at = news.cur ? news.items.findIndex((i) => keyOf(i) === keyOf(news.cur)) : -1;

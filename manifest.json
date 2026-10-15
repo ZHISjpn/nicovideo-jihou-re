@@ -1,8 +1,13 @@
 {
   "manifest_version": 2,
   "name": "時報 Lite",
-  "version": "0.4.0",
+  "version": "0.5.1",
   "description": "ニコニコ動画の視聴ページで、0時・2時の時報とニュース／お知らせ（マーキーエリア風）をクライアント上で簡易再現します。時報のON/OFFはアカウントページで切り替えられます。",
+  "icons": {
+    "48": "icons/icon-48.png",
+    "64": "icons/icon-64.png",
+    "96": "icons/icon-96.png"
+  },
   "browser_specific_settings": {
     "gecko": {
       "id": "jihou-lite@local.example",

@@ -32,7 +32,7 @@ Firefox を閉じると消えます。コードや設定を変えたあとは「
 署名のないアドオンを入れるには、Firefox Developer Edition などで `about:config` の `xpinstall.signatures.required` を `false` にする必要があります。
 
 1. 次のファイル・フォルダを **zip の最上階層に** まとめる（フォルダごと圧縮しない）
-   `manifest.json` / `background.js` / `content.js` / `account.js` / `schedule.js` / `media/`
+   `manifest.json` / `background.js` / `content.js` / `account.js` / `schedule.js` / `icons/` / `media/`
 2. 拡張子を `.xpi` に変更する
 3. `about:addons` → 歯車 → 「ファイルからアドオンをインストール…」で選ぶ
 4. 入れ替えたあとは、Firefox を一度再起動する
@@ -93,6 +93,7 @@ document.dispatchEvent(new Event("jihou:event"))  // schedule.js の1番目の�
 ├─ content.js      視聴ページでの表示・動作の本体
 ├─ account.js      アカウントページの設定パネル（時報のON/OFF）
 ├─ schedule.js     時報スケジュール・イベントの設定
+├─ icons/          拡張機能のアイコン
 ├─ media/          時報動画（仮の動画が入っています）
 └─ docs/MANUAL.md  マニュアル
 ```
